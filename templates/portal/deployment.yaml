@@ -34,9 +34,6 @@ spec:
 {{ toYaml .Values.portal.podAnnotations | indent 8 }}
 {{- end }}
     spec:
-      securityContext:
-        runAsUser: 10000
-        fsGroup: 10000
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -61,7 +58,11 @@ spec:
       {{- end }}
       containers:
       - name: portal
+{{ if not .Values.openshift.active }}
         image: {{ .Values.portal.image.repository }}:{{ .Values.portal.image.tag }}
+{{ else }}
+        image: {{ .Values.openshift.registry }}/{{ .Release.Namespace }}/{{ .Values.portal.image.repository }}:{{ .Values.portal.image.tag }}
+{{ end }}
         imagePullPolicy: {{ .Values.imagePullPolicy }}
 {{- if .Values.portal.resources }}
         resources:
