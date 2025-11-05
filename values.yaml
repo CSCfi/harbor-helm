@@ -1,5 +1,5 @@
 expose:
-  # Set how to expose the service. Set the type as "ingress", "clusterIP", "nodePort" or "loadBalancer"
+  # Set how to expose the service. Set the type as "ingress", "clusterIP", "nodePort", "loadBalancer" or "route"
   # and fill the information in the corresponding section
   type: ingress
   tls:
@@ -16,7 +16,7 @@ expose:
     # The tls certificate can be generated manually or by cert manager
     # 3) none: configure no tls certificate for the ingress. If the default
     # tls certificate is configured in the ingress controller, choose this option
-    certSource: secret
+    certSource: auto
     auto:
       # The common name used to generate the certificate, it's necessary
       # when the type isn't "ingress"
@@ -25,7 +25,7 @@ expose:
       # The name of secret which contains keys named:
       # "tls.crt" - the certificate
       # "tls.key" - the private key
-      secretName: "empty"
+      secretName: ""
   ingress:
     hosts:
       core: core.harbor.domain
@@ -48,6 +48,19 @@ expose:
       nginx.ingress.kubernetes.io/proxy-body-size: "0"
     # ingress-specific labels
     labels: {}
+  route:
+    labels: {}
+    annotations: {}
+    # References to the parent gateways
+    parentRefs: []
+      # - name: envoy-internal
+      #   namespace: networking
+      #   sectionName: https
+      #   group: gateway.networking.k8s.io
+      #   kind: Gateway
+    # The hostnames for the HTTPRoute
+    hosts: []
+      # - "harbor.example.com"
   clusterIP:
     # The name of ClusterIP service
     name: harbor
@@ -273,7 +286,7 @@ persistence:
 # The initial password of Harbor admin. Change it from portal after launching Harbor
 # or give an existing secret for it
 # key in secret is given via (default to HARBOR_ADMIN_PASSWORD)
-# existingSecretAdminPassword:
+existingSecretAdminPassword: ""
 existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
 harborAdminPassword: "Harbor12345"
 
@@ -340,8 +353,12 @@ ipFamily:
   ipv4:
     enabled: true
 
-#imagePullPolicy: IfNotPresent
-imagePullPolicy: Always
+  # Sets the IP family policy for services to be able to configure dual-stack; see [Configure dual-stack](https://kubernetes.io/docs/concepts/services-networking/dual-stack/#services).
+  policy: ""
+  # A list of IP families for services that should be supported, in the order in which they should be applied to ClusterIP. Can be "IPv4" and/or "IPv6".
+  families: []
+
+imagePullPolicy: IfNotPresent
 
 # Use this set to assign a list of default pullSecrets
 imagePullSecrets:
@@ -486,7 +503,7 @@ containerSecurityContext:
 # If service exposed via "ingress", the Nginx will not be used
 nginx:
   image:
-    repository: goharbor/nginx-photon
+    repository: docker.io/goharbor/nginx-photon
     tag: dev
   # set the service account to be used, default if left empty
   serviceAccountName: ""
@@ -517,7 +534,7 @@ nginx:
 
 portal:
   image:
-    repository: goharbor/harbor-portal
+    repository: docker.io/goharbor/harbor-portal
     tag: dev
   # set the service account to be used, default if left empty
   serviceAccountName: ""
@@ -554,9 +571,10 @@ portal:
   # - name: wait
   #   image: busybox
   #   command: [ 'sh', '-c', "sleep 20" ]
+
 core:
   image:
-    repository: harbor-core
+    repository: docker.io/goharbor/harbor-core
     tag: dev
   # set the service account to be used, default if left empty
   serviceAccountName: ""
@@ -629,7 +647,7 @@ core:
   tokenCert: |
   # The XSRF key. Will be generated automatically if it isn't specified
   # While you specified, Please make sure it is 32 characters, otherwise would have validation issue at the harbor-core runtime
-  # https://github.com/goharbor/harbor/pull/21154 
+  # https://github.com/goharbor/harbor/pull/21154
   xsrfKey: ""
   # If using existingSecret, the key is defined by core.existingXsrfSecretKey
   existingXsrfSecret: ""
@@ -645,7 +663,7 @@ core:
 
 jobservice:
   image:
-    repository: harbor-jobservice
+    repository: docker.io/goharbor/harbor-jobservice
     tag: dev
   # set the service account to be used, default if left empty
   serviceAccountName: ""
@@ -660,16 +678,7 @@ jobservice:
   extraEnvVars: []
   nodeSelector: {}
   tolerations: []
-  affinity:
-    podAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-      - labelSelector:
-          matchExpressions:
-          - key: component
-            operator: In
-            values:
-            - "jobservice"
-        topologyKey: "kubernetes.io/hostname"
+  affinity: {}
   # Spread Pods across failure-domains like regions, availability zones or nodes
   topologySpreadConstraints:
   # - maxSkew: 1
@@ -717,7 +726,7 @@ jobservice:
 registry:
   registry:
     image:
-      repository: registry-photon
+      repository: docker.io/goharbor/registry-photon
       tag: dev
     # resources:
     #  requests:
@@ -726,7 +735,7 @@ registry:
     extraEnvVars: []
   controller:
     image:
-      repository: harbor-registryctl
+      repository: docker.io/goharbor/harbor-registryctl
       tag: dev
     # resources:
     #  requests:
@@ -741,17 +750,7 @@ registry:
   revisionHistoryLimit: 10
   nodeSelector: {}
   tolerations: []
-  affinity:
-    podAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-      - labelSelector:
-          matchExpressions:
-          - key: component
-            operator: In
-            values:
-            - "registry"
-        topologyKey: "kubernetes.io/hostname"
- 
+  affinity: {}
   # Spread Pods across failure-domains like regions, availability zones or nodes
   topologySpreadConstraints: []
   # - maxSkew: 1
@@ -816,7 +815,7 @@ trivy:
   enabled: true
   image:
     # repository the repository for Trivy adapter image
-    repository: trivy-adapter-photon
+    repository: docker.io/goharbor/trivy-adapter-photon
     # tag the tag for Trivy adapter image
     tag: dev
   # set the service account to be used, default if left empty
@@ -889,8 +888,19 @@ trivy:
   skipUpdate: false
   # skipJavaDBUpdate If the flag is enabled you have to manually download the `trivy-java.db` file and mount it in the
   # `/home/scanner/.cache/trivy/java-db/trivy-java.db` path
-  #
   skipJavaDBUpdate: false
+  # The dbRepository and javaDBRepository flags can take multiple values, improving reliability when downloading databases.
+  # Databases are downloaded in priority order until one is successful.
+  # An attempt to download from the next repository is only made if a temporary error is received (e.g. status 429 or 5xx).
+  #
+  # OCI repository(ies) to retrieve the trivy vulnerability database in order of priority
+  dbRepository:
+    - "mirror.gcr.io/aquasec/trivy-db"
+    - "ghcr.io/aquasecurity/trivy-db"
+  # OCI repository(ies) to retrieve the Java trivy vulnerability database in order of priority
+  javaDBRepository:
+    - "mirror.gcr.io/aquasec/trivy-java-db"
+    - "ghcr.io/aquasecurity/trivy-java-db"
   # The offlineScan option prevents Trivy from sending API requests to identify dependencies.
   #
   # Scanning JAR files and pom.xml may require Internet access for better detection, but this option tries to avoid it.
@@ -910,7 +920,7 @@ database:
   type: internal
   internal:
     image:
-      repository: harbor-db
+      repository: docker.io/goharbor/harbor-db
       tag: dev
     # set the service account to be used, default if left empty
     serviceAccountName: ""
@@ -990,7 +1000,7 @@ redis:
   type: internal
   internal:
     image:
-      repository: goharbor/redis-photon
+      repository: docker.io/goharbor/redis-photon
       tag: dev
     # set the service account to be used, default if left empty
     serviceAccountName: ""
@@ -1051,7 +1061,7 @@ redis:
     # username field can be an empty string, and it will be authenticated against the default user
     username: ""
     password: ""
-    # If using existingSecret, the key must be REDIS_PASSWORD
+    # If using existingSecret, the key must be REDIS_PASSWORD, if ACL mode enabled, also inlcudes data of username, the keys must be REDIS_USERNAME
     existingSecret: ""
   ## Additional deployment annotations
   podAnnotations: {}
@@ -1060,7 +1070,7 @@ redis:
 
 exporter:
   image:
-    repository: goharbor/harbor-exporter
+    repository: docker.io/goharbor/harbor-exporter
     tag: dev
   serviceAccountName: ""
   # mount the service account token
@@ -1088,10 +1098,3 @@ exporter:
   #   whenUnsatisfiable: DoNotSchedule
   cacheDuration: 23
   cacheCleenInterval: 14400
-
-ldap:
-  local: true
-  sync:
-    enabled: true
-    image: docker.io/lvarin/harbor-ldaps-sync:latest
-    git: http://github.com/lvarin/harbor-ldaps-sync
